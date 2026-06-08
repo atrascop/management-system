@@ -59,6 +59,7 @@ app.use("/api", roasRoutes);
  * Final endpoint:
  * POST /api/shopify/webhook
  */
+app.use("/webhooks/shopify", shopifyRoute);
 app.use("/api/shopify", shopifyRoute);
 
 /**
