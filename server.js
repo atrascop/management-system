@@ -12,7 +12,8 @@ import adsRoute from "./lib/routes/ads.js";
 import deliveryRoute from "./lib/routes/delivery.js";
 import adsMatchRoutes from "./lib/routes/ads.match.js";
 import roasRoutes from "./lib/routes/roas.js";
-import authRoutes from "./routes/auth.js";
+
+import authRoutes from "./lib/routes/auth.js";
 
 // Workflows
 import { initWorkflows } from "./lib/services/workflow/workflow.registry.js";
