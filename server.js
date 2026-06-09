@@ -12,6 +12,7 @@ import adsRoute from "./lib/routes/ads.js";
 import deliveryRoute from "./lib/routes/delivery.js";
 import adsMatchRoutes from "./lib/routes/ads.match.js";
 import roasRoutes from "./lib/routes/roas.js";
+import authRoutes from "./routes/auth.js";
 
 // Workflows
 import { initWorkflows } from "./lib/services/workflow/workflow.registry.js";
@@ -61,6 +62,8 @@ app.use("/api", roasRoutes);
  */
 app.use("/webhooks/shopify", shopifyRoute);
 app.use("/api/shopify", shopifyRoute);
+
+app.use("/api/auth", authRoutes);
 
 /**
  * INIT WORKFLOWS (EVENT SYSTEM - SAFE INIT)
