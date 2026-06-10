@@ -19,6 +19,7 @@ import authRoutes from "./lib/routes/auth.js";
 import { initWorkflows } from "./lib/services/workflow/workflow.registry.js";
 
 const app = express();
+console.log("🔐 JWT exists:", !!process.env.JWT_SECRET);
 
 console.log("🟢 SERVER BOOT START");
 
