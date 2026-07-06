@@ -1,69 +1,49 @@
 import cron from "node-cron";
-import axios from "axios";
-import { supabase } from "../lib/supabase.js";
-import { ensureSession, syncAllStatuses } from "../services/polivraison.js";
+import { validateReturnSlip } from "../lib/services/delivery/playwright/validateReturn.js";
+import { syncWarehouseStock } from "../lib/services/delivery/playwright/syncWarehouseStock.js";
+import { importReturnReceipts } from "../lib/services/delivery/returns.import.service.js";
+console.log("🕒 Cron jobs loaded");
 
-// Keep Polivraison session alive
-cron.schedule("*/30 * * * *", async () => {
-  console.log("🔄 Keeping Polivraison session alive...");
-  await ensureSession();
-});
-
-// Sync Polivraison statuses every hour
-cron.schedule("0 * * * *", async () => {
-  console.log("📦 Syncing Polivraison statuses...");
-
+async function validateShexpressReturns() {
   try {
-    const updates = await syncAllStatuses();
+    console.log("🔄 Checking SHExpress BRC returns...");
 
-    for (const update of updates) {
-      await supabase
-        .from("orders")
-        .update({
-          deliveryStatus: update.deliveryStatus,
-          updated_at: update.updatedAt,
-        })
-        .eq("waybillNumber", update.waybillNumber);
-    }
+    const result = await validateReturnSlip();
 
-    console.log(`✅ Synced ${updates.length} shipments`);
+    console.log("✅ BRC returns checked:", result);
   } catch (error) {
-    console.error("❌ Polivraison sync failed:", error.message);
+    console.error("❌ BRC return validation failed:", error.message);
   }
-});
+}
 
-// Facebook Ads - daily at 6am and 6pm
-cron.schedule("0 6,18 * * *", async () => {
-  console.log("📊 Fetching Facebook Ads data...");
-
+async function syncShexpressWarehouseStock() {
   try {
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const dateStr = yesterday.toISOString().split("T")[0];
+    console.log("🔄 Syncing SHExpress warehouse stock...");
+    const result = await syncWarehouseStock();
+    console.log("✅ SHExpress stock synced:", result);
+  } catch (error) {
+    console.error("❌ SHExpress stock sync failed:", error.message);
+  }
+}
+async function importShexpressReturns() {
+  try {
+    console.log("🔄 Importing SHExpress return receipts...");
 
-    const url = `https://graph.facebook.com/v18.0/${process.env.FACEBOOK_AD_ACCOUNT_ID}/insights`;
+    const result = await importReturnReceipts();
 
-    const response = await axios.get(url, {
-      params: {
-        access_token: process.env.FACEBOOK_ACCESS_TOKEN,
-        fields: "spend",
-        time_range: JSON.stringify({ since: dateStr, until: dateStr }),
-        level: "account",
-      },
+    console.log("✅ Return receipts imported:", {
+      imported: result.imported,
     });
-
-    const spend = parseFloat(response.data.data?.[0]?.spend || 0);
-
-    if (spend > 0) {
-      await supabase.from("ads_spend").upsert({
-        date: dateStr,
-        spend: spend,
-        platform: "facebook",
-      });
-
-      console.log("✅ Ads spend saved:", spend);
-    }
   } catch (error) {
-    console.error("❌ Facebook API error:", error.message);
+    console.error("❌ Return receipts import failed:", error.message);
   }
-});
+}
+// Run every day at 09:00
+cron.schedule("0 9 * * *", validateShexpressReturns);
+
+// Run every day at 21:00
+cron.schedule("0 21 * * *", validateShexpressReturns);
+cron.schedule("5 9 * * *", importShexpressReturns);
+cron.schedule("5 21 * * *", importShexpressReturns);
+cron.schedule("10 9 * * *", syncShexpressWarehouseStock);
+cron.schedule("10 21 * * *", syncShexpressWarehouseStock);
