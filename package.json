@@ -17,6 +17,7 @@
     "jsonwebtoken": "^9.0.3",
     "node-cron": "^3.0.3",
     "playwright": "^1.61.1",
-    "puppeteer": "^25.1.0"
+    "puppeteer": "^25.1.0",
+    "string-similarity": "^4.0.4"
   }
 }
