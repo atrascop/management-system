@@ -29,7 +29,7 @@ import adsMatchRoutes from "./lib/routes/ads.match.js";
 import roasRoutes from "./lib/routes/roas.js";
 import authRoutes from "./lib/routes/auth.js";
 import backfillRoutes from "./lib/routes/backfill.js";
-
+import invoicesRoute from "./lib/routes/invoices.js";
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
@@ -75,6 +75,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/returns", returnsRoute);
 app.use("/api/backfill", backfillRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/invoices", invoicesRoute);
 
 app.use("/api/product-profit", productProfitRoutes);
 app.use("/api/product-campaign-mappings", productCampaignMappingRoutes);

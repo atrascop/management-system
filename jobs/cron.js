@@ -5,6 +5,9 @@ import { syncWarehouseStock } from "../lib/services/delivery/playwright/syncWare
 import { importReturnReceipts } from "../lib/services/delivery/returns.import.service.js";
 import { syncMetaAdsForRange } from "../lib/services/ads.service.js";
 
+// Enable this import after the invoice table and Storage bucket work.
+// import { syncClientInvoices } from "../lib/services/invoices/playwright/syncClientInvoices.js";
+
 console.log("🕒 Cron jobs loaded");
 
 function todayIso() {
@@ -13,53 +16,135 @@ function todayIso() {
 
 function addDays(dateString, days) {
   const date = new Date(`${dateString}T00:00:00.000Z`);
+
   date.setUTCDate(date.getUTCDate() + days);
+
   return date.toISOString().slice(0, 10);
 }
 
-async function validateShexpressReturns() {
+function errorMessage(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function runStep(name, task) {
   try {
-    console.log("🔄 Checking SHExpress BRC returns...");
+    console.log(`🔄 ${name}...`);
 
-    const result = await validateReturnSlip();
+    const result = await task();
 
-    console.log("✅ BRC returns checked:", result);
+    console.log(`✅ ${name} completed:`, result);
+
+    return {
+      success: true,
+      result,
+    };
   } catch (error) {
-    console.error("❌ BRC return validation failed:", error.message);
+    console.error(`❌ ${name} failed:`, errorMessage(error));
+
+    return {
+      success: false,
+      error: errorMessage(error),
+    };
   }
 }
 
-async function syncShexpressWarehouseStock() {
-  try {
-    console.log("🔄 Syncing SHExpress warehouse stock...");
+/*
+|--------------------------------------------------------------------------
+| SHExpress automation
+|--------------------------------------------------------------------------
+*/
 
-    const result = await syncWarehouseStock();
+let shexpressAutomationRunning = false;
 
-    console.log("✅ SHExpress stock synced:", result);
-  } catch (error) {
-    console.error("❌ SHExpress stock sync failed:", error.message);
+async function runShexpressAutomation() {
+  if (shexpressAutomationRunning) {
+    console.log(
+      "⏭️ SHExpress automation skipped: previous run is still active",
+    );
+
+    return;
   }
-}
 
-async function importShexpressReturns() {
+  shexpressAutomationRunning = true;
+
+  const startedAt = Date.now();
+
+  const results = {
+    returnValidation: null,
+    returnImport: null,
+    warehouseStock: null,
+    invoices: null,
+  };
+
+  console.log("========================================");
+  console.log("🚚 SHExpress automation started");
+  console.log("========================================");
+
   try {
-    console.log("🔄 Importing SHExpress return receipts...");
+    /*
+     * 1. Find every visible "Valider" return slip.
+     * 2. Confirm it in SHExpress.
+     * 3. Increase returned product stock only after validation.
+     */
+    results.returnValidation = await runStep(
+      "Validating SHExpress return slips",
+      validateReturnSlip,
+    );
 
-    const result = await importReturnReceipts();
+    /*
+     * Import validated return receipts into your system
+     * so the Returns page is updated.
+     */
+    results.returnImport = await runStep(
+      "Importing SHExpress return receipts",
+      importReturnReceipts,
+    );
 
-    console.log("✅ Return receipts imported:", {
-      imported: result.imported,
+    /*
+     * Read the current SHExpress warehouse stock.
+     */
+    results.warehouseStock = await runStep(
+      "Synchronizing SHExpress warehouse stock",
+      syncWarehouseStock,
+    );
+
+    /*
+     * Enable this section only after client_invoices
+     * and the client-invoices Storage bucket are ready.
+     */
+    /*
+    results.invoices = await runStep(
+      "Synchronizing SHExpress client invoices",
+      syncClientInvoices,
+    );
+    */
+
+    console.log("========================================");
+    console.log("✅ SHExpress automation completed");
+    console.log(`⏱️ Duration: ${Date.now() - startedAt} ms`);
+    console.dir(results, {
+      depth: 4,
     });
-  } catch (error) {
-    console.error("❌ Return receipts import failed:", error.message);
+    console.log("========================================");
+
+    return results;
+  } finally {
+    shexpressAutomationRunning = false;
   }
 }
+
+/*
+|--------------------------------------------------------------------------
+| Meta Ads automation
+|--------------------------------------------------------------------------
+*/
 
 let metaAdsSyncRunning = false;
 
 async function syncMetaAdsAutomatically() {
   if (metaAdsSyncRunning) {
     console.log("⏭️ Meta Ads auto sync skipped: already running");
+
     return;
   }
 
@@ -86,26 +171,50 @@ async function syncMetaAdsAutomatically() {
       totalStoreCurrency: result.totalStoreCurrency,
     });
   } catch (error) {
-    console.error("❌ Meta Ads auto sync failed:", error.message);
+    console.error("❌ Meta Ads auto sync failed:", errorMessage(error));
   } finally {
     metaAdsSyncRunning = false;
   }
 }
 
-// SHExpress returns: every day at 09:00 and 21:00
-cron.schedule("0 9 * * *", validateShexpressReturns);
-cron.schedule("0 21 * * *", validateShexpressReturns);
+/*
+|--------------------------------------------------------------------------
+| Schedules
+|--------------------------------------------------------------------------
+*/
 
-// SHExpress returns import: every day at 09:05 and 21:05
-cron.schedule("5 9 * * *", importShexpressReturns);
-cron.schedule("5 21 * * *", importShexpressReturns);
+// Run SHExpress tasks sequentially every 15 minutes.
+cron.schedule("*/15 * * * *", runShexpressAutomation, {
+  timezone: "Africa/Casablanca",
+});
 
-// SHExpress warehouse stock: every day at 09:10 and 21:10
-cron.schedule("10 9 * * *", syncShexpressWarehouseStock);
-cron.schedule("10 21 * * *", syncShexpressWarehouseStock);
+// Meta Ads every hour.
+cron.schedule("0 * * * *", syncMetaAdsAutomatically, {
+  timezone: "Africa/Casablanca",
+});
 
-// Meta Ads spend: automatically sync today + yesterday every hour
-cron.schedule("0 * * * *", syncMetaAdsAutomatically);
+/*
+|--------------------------------------------------------------------------
+| Run once after backend startup
+|--------------------------------------------------------------------------
+*/
 
-// Run once when backend starts, so dashboard is fresh after deploy/restart
-setTimeout(syncMetaAdsAutomatically, 15_000);
+setTimeout(() => {
+  runShexpressAutomation().catch((error) => {
+    console.error(
+      "❌ Initial SHExpress automation failed:",
+      errorMessage(error),
+    );
+  });
+}, 30_000);
+
+setTimeout(() => {
+  syncMetaAdsAutomatically().catch((error) => {
+    console.error(
+      "❌ Initial Meta Ads synchronization failed:",
+      errorMessage(error),
+    );
+  });
+}, 15_000);
+
+export { runShexpressAutomation, syncMetaAdsAutomatically };
